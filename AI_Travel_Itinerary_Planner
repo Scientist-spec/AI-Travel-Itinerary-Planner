@@ -81,7 +81,7 @@ workflow.add_edge("create_itinerary", END)
 app = workflow.compile()
 
 def travel_planner_cli(user_request: str):
-    print(f"\n🧭 Initial Request: {user_request}")
+    print(f"\n Initial Request: {user_request}")
     state = {
         "messages": [HumanMessage(content=user_request)],
         "city": "",
@@ -135,7 +135,7 @@ interface = gr.Interface(
         gr.Textbox(label="Enter your interests (comma-separated)")
     ],
     outputs=gr.Textbox(label="Generated Itinerary"),
-    title="🧳 Travel Itinerary Planner",
+    title=" Travel Itinerary Planner",
     description="Enter a city and your interests to get a personalized day trip plan.",
     theme="Yntec/HaleyCH_Theme_Orange_Green"
 )
