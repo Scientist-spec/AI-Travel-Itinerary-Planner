@@ -1,0 +1,150 @@
+# Install dependencies if running for the first time
+# !pip install langchain langchain_core langchain_groq langchain_community langgraph gradio
+
+import os
+from typing import TypedDict, Annotated, List
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate
+from langgraph.graph import StateGraph, END
+from langgraph.graph.graph import StateGraph
+from langchain_groq import ChatGroq
+import gradio as gr
+
+# -----------------------------
+# Define Planner State
+# -----------------------------
+class PlannerState(TypedDict):
+    messages: Annotated[List[HumanMessage | AIMessage], "Conversation messages"]
+    city: str
+    interests: List[str]
+    itinerary: str
+
+# -----------------------------
+# LLM Configuration
+# -----------------------------
+llm = ChatGroq(
+    temperature=0,
+    groq_api_key="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",  # Replace this with your actual API key
+    model_name="llama-3-3-70b-versatile"
+)
+
+# -----------------------------
+# Prompt Template
+# -----------------------------
+itinerary_prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful travel assistant. Create a day trip itinerary for {city} based on the user's interests: {interests}. Provide a brief, bulleted itinerary."),
+    ("human", "Create an itinerary for my day trip.")
+])
+
+# -----------------------------
+# CLI Workflow Functions
+# -----------------------------
+def input_city(state: PlannerState) -> PlannerState:
+    user_message = input("Enter the city you want to visit: ")
+    return {
+        **state,
+        "city": user_message,
+        "messages": state["messages"] + [HumanMessage(content=user_message)]
+    }
+
+def input_interests(state: PlannerState) -> PlannerState:
+    user_message = input(f"Enter your interests for {state['city']} (comma-separated): ")
+    return {
+        **state,
+        "interests": [i.strip() for i in user_message.split(',')],
+        "messages": state["messages"] + [HumanMessage(content=user_message)]
+    }
+
+def create_itinerary(state: PlannerState) -> PlannerState:
+    print(f"\nGenerating itinerary for {state['city']} based on interests: {', '.join(state['interests'])}...")
+    response = llm.invoke(itinerary_prompt.format_prompt(city=state["city"], interests=", ".join(state["interests"])).to_messages())
+    print("\n📋 Final Itinerary:\n", response.content)
+    return {
+        **state,
+        "messages": state["messages"] + [AIMessage(content=response.content)],
+        "itinerary": response.content,
+    }
+
+# -----------------------------
+# CLI LangGraph Workflow
+# -----------------------------
+workflow = StateGraph(PlannerState)
+workflow.add_node("input_city", input_city)
+workflow.add_node("input_interests", input_interests)
+workflow.add_node("create_itinerary", create_itinerary)
+
+workflow.set_entry_point("input_city")
+workflow.add_edge("input_city", "input_interests")
+workflow.add_edge("input_interests", "create_itinerary")
+workflow.add_edge("create_itinerary", END)
+
+app = workflow.compile()
+
+def travel_planner_cli(user_request: str):
+    print(f"\n🧭 Initial Request: {user_request}")
+    state = {
+        "messages": [HumanMessage(content=user_request)],
+        "city": "",
+        "interests": [],
+        "itinerary": "",
+    }
+    for _ in app.stream(state):
+        pass
+
+# -----------------------------
+# Gradio Web Interface
+# -----------------------------
+def input_city_web(city: str, state: PlannerState) -> PlannerState:
+    return {
+        **state,
+        "city": city,
+        "messages": state['messages'] + [HumanMessage(content=city)],
+    }
+
+def input_interests_web(interests: str, state: PlannerState) -> PlannerState:
+    return {
+        **state,
+        "interests": [interest.strip() for interest in interests.split(',')],
+        "messages": state['messages'] + [HumanMessage(content=interests)],
+    }
+
+def create_itinerary_web(state: PlannerState) -> str:
+    response = llm.invoke(itinerary_prompt.format_messages(
+        city=state['city'],
+        interests=", ".join(state['interests'])
+    ))
+    state["itinerary"] = response.content
+    state["messages"] += [AIMessage(content=response.content)]
+    return response.content
+
+def travel_planner_web(city: str, interests: str):
+    state = {
+        "messages": [],
+        "city": "",
+        "interests": [],
+        "itinerary": "",
+    }
+    state = input_city_web(city, state)
+    state = input_interests_web(interests, state)
+    return create_itinerary_web(state)
+
+interface = gr.Interface(
+    fn=travel_planner_web,
+    inputs=[
+        gr.Textbox(label="Enter the city for your day trip"),
+        gr.Textbox(label="Enter your interests (comma-separated)")
+    ],
+    outputs=gr.Textbox(label="Generated Itinerary"),
+    title="🧳 Travel Itinerary Planner",
+    description="Enter a city and your interests to get a personalized day trip plan.",
+    theme="Yntec/HaleyCH_Theme_Orange_Green"
+)
+
+# -----------------------------
+# Execution (Uncomment below line to launch Gradio app)
+# -----------------------------
+# interface.launch()
+
+# Uncomment below to test CLI version:
+# user_request = "I want to plan a day trip"
+# travel_planner_cli(user_request)
